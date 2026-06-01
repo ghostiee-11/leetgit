@@ -5,7 +5,10 @@
 (function () {
   "use strict";
 
-  const CHECK_RE = /\/submissions\/detail\/(\d+)\/check\/?/;
+  // Matches both the legacy and current (v2) check endpoints:
+  //   /submissions/detail/{id}/check/
+  //   /submissions/detail/{id}/v2/check/
+  const CHECK_RE = /\/submissions\/detail\/(\d+)\/(?:v\d+\/)?check\/?/;
 
   function slugFromLocation() {
     const m = location.pathname.match(/\/problems\/([^/]+)/);
@@ -35,7 +38,7 @@
     );
   }
 
-  const PROBE_RE = /submi|check|interpret/i;
+  const PROBE_RE = /\/(submit|check|interpret_solution)\//i;
 
   // Wrap fetch.
   const origFetch = window.fetch;
