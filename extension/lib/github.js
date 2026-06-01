@@ -6,7 +6,7 @@
 
   // Public OAuth App client id (safe to ship). Create an OAuth App with
   // "Device Flow" enabled and paste its Client ID here. See PUBLISHING.md.
-  const CLIENT_ID = "REPLACE_WITH_OAUTH_CLIENT_ID";
+  const CLIENT_ID = "Ov23libcmpS3IkE5eT3e";
   const SCOPE = "repo";
 
   const NOTES_HEADING = "## Notes";
