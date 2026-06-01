@@ -36,30 +36,18 @@
     return resp.json(); // {device_code, user_code, verification_uri, expires_in, interval}
   }
 
-  async function pollAccessToken(deviceCode, intervalSec, expiresInSec) {
-    const start = Date.now();
-    let interval = (intervalSec || 5) * 1000;
-    while (Date.now() - start < (expiresInSec || 900) * 1000) {
-      await new Promise((r) => setTimeout(r, interval));
-      const resp = await fetch("https://github.com/login/oauth/access_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          client_id: CLIENT_ID,
-          device_code: deviceCode,
-          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        }),
-      });
-      const data = await resp.json();
-      if (data.access_token) return data.access_token;
-      if (data.error === "authorization_pending") continue;
-      if (data.error === "slow_down") {
-        interval += 5000;
-        continue;
-      }
-      throw new Error(data.error_description || data.error || "authorization failed");
-    }
-    throw new Error("authorization timed out");
+  // One token-endpoint poll. Returns {access_token} | {error}.
+  async function requestToken(deviceCode) {
+    const resp = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        device_code: deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      }),
+    });
+    return resp.json();
   }
 
   // ---- REST helpers ----
@@ -253,7 +241,7 @@
     CLIENT_ID,
     isConfigured,
     startDeviceFlow,
-    pollAccessToken,
+    requestToken,
     getUser,
     listRepos,
     createRepo,

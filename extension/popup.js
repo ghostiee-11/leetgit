@@ -30,19 +30,42 @@ function setStatus(state) {
 }
 
 let state = null;
+let authTimer = null;
+
+function stopAuthPolling() {
+  if (authTimer) {
+    clearInterval(authTimer);
+    authTimer = null;
+  }
+}
 
 async function route() {
+  stopAuthPolling();
   showView("loading");
   state = await send({ type: "getState" });
   await showBanner();
   if (!state.connected) {
     setStatus("setup");
+    // Resume an in-progress sign-in instead of restarting it.
+    if (state.pending) return showAuthView(state.pending.user_code, state.pending.verification_uri);
     return showView("connect");
   }
   setStatus("ok");
   if (!state.repo) return showRepoPicker();
   $("repo-link").href = "https://github.com/" + state.repo;
   return showDashboard();
+}
+
+function showAuthView(userCode, verificationUri) {
+  $("user-code").textContent = userCode;
+  $("open-github").onclick = () => chrome.tabs.create({ url: verificationUri });
+  showView("auth");
+  stopAuthPolling();
+  authTimer = setInterval(async () => {
+    const r = await send({ type: "pollAuth" });
+    if (r.status === "done") { stopAuthPolling(); route(); }
+    else if (r.status === "error") { stopAuthPolling(); alertBanner(r.error || "authorization failed"); showView("connect"); }
+  }, 4000);
 }
 
 async function showBanner() {
@@ -70,9 +93,7 @@ $("connect-btn").addEventListener("click", async () => {
     }
     return alertBanner(resp.error);
   }
-  $("user-code").textContent = resp.user_code;
-  $("open-github").onclick = () => chrome.tabs.create({ url: resp.verification_uri });
-  showView("auth");
+  showAuthView(resp.user_code, resp.verification_uri);
 });
 
 $("show-pat").addEventListener("click", () => $("pat-box").classList.toggle("hidden"));
@@ -83,7 +104,11 @@ $("pat-save").addEventListener("click", async () => {
   if (!resp.ok) return alertBanner(resp.error || "invalid token");
   route();
 });
-$("auth-cancel").addEventListener("click", route);
+$("auth-cancel").addEventListener("click", async () => {
+  stopAuthPolling();
+  await send({ type: "cancelAuth" });
+  showView("connect");
+});
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg) return;

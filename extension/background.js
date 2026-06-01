@@ -24,32 +24,69 @@ function broadcast(msg) {
   chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
-// ---- Auth ----
-let authPolling = false;
+// ---- Auth (device flow, resilient across popup closes + worker sleep) ----
+let pollInFlight = false;
 
 async function startAuth() {
   const device = await GH.startDeviceFlow();
-  if (!authPolling) {
-    authPolling = true;
-    pollLoop(device.device_code, device.interval, device.expires_in).finally(() => {
-      authPolling = false;
-    });
-  }
+  const pendingAuth = {
+    deviceCode: device.device_code,
+    userCode: device.user_code,
+    verificationUri: device.verification_uri,
+    interval: device.interval || 5,
+    expiresAt: Date.now() + (device.expires_in || 900) * 1000,
+  };
+  await store({ pendingAuth });
+  chrome.alarms.create("leetgit-auth", { periodInMinutes: 0.5 });
+  setTimeout(() => pollAuth(), (pendingAuth.interval + 1) * 1000);
   return {
-    user_code: device.user_code,
-    verification_uri: device.verification_uri,
+    user_code: pendingAuth.userCode,
+    verification_uri: pendingAuth.verificationUri,
     expires_in: device.expires_in,
   };
 }
 
-async function pollLoop(deviceCode, interval, expiresIn) {
+async function clearAuth() {
+  await chrome.storage.local.remove("pendingAuth");
+  chrome.alarms.clear("leetgit-auth");
+}
+
+// One poll of the token endpoint. Safe to call from the popup and the alarm.
+async function pollAuth() {
+  if (pollInFlight) return { status: "pending" };
+  pollInFlight = true;
   try {
-    const token = await GH.pollAccessToken(deviceCode, interval, expiresIn);
-    const user = await GH.getUser(token);
-    await store({ githubToken: token, githubUser: user.login });
-    broadcast({ type: "authChanged", ok: true, user: user.login });
-  } catch (e) {
-    broadcast({ type: "authChanged", ok: false, error: String(e.message || e) });
+    const { pendingAuth } = await read("pendingAuth");
+    if (!pendingAuth) return { status: "idle" };
+    if (Date.now() > pendingAuth.expiresAt) {
+      await clearAuth();
+      broadcast({ type: "authChanged", ok: false, error: "code expired" });
+      return { status: "error", error: "code expired" };
+    }
+    let data;
+    try {
+      data = await GH.requestToken(pendingAuth.deviceCode);
+    } catch (e) {
+      return { status: "pending" }; // network blip, try again next tick
+    }
+    if (data.access_token) {
+      const user = await GH.getUser(data.access_token);
+      await store({ githubToken: data.access_token, githubUser: user.login });
+      await clearAuth();
+      broadcast({ type: "authChanged", ok: true, user: user.login });
+      return { status: "done", user: user.login };
+    }
+    if (data.error === "authorization_pending") return { status: "pending" };
+    if (data.error === "slow_down") {
+      pendingAuth.interval = (pendingAuth.interval || 5) + 5;
+      await store({ pendingAuth });
+      return { status: "pending" };
+    }
+    await clearAuth();
+    broadcast({ type: "authChanged", ok: false, error: data.error_description || data.error });
+    return { status: "error", error: data.error_description || data.error };
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -114,7 +151,11 @@ async function getStats() {
 }
 
 async function getState() {
-  const s = await read(["githubToken", "githubUser", "repo", "branch", "enabled"]);
+  const s = await read(["githubToken", "githubUser", "repo", "branch", "enabled", "pendingAuth"]);
+  let pending = null;
+  if (s.pendingAuth && Date.now() < s.pendingAuth.expiresAt) {
+    pending = { user_code: s.pendingAuth.userCode, verification_uri: s.pendingAuth.verificationUri };
+  }
   return {
     connected: !!s.githubToken,
     user: s.githubUser || null,
@@ -122,6 +163,7 @@ async function getState() {
     branch: s.branch || null,
     enabled: s.enabled !== false,
     configured: GH.isConfigured(),
+    pending: pending,
   };
 }
 
@@ -134,6 +176,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return sendResponse(await getState());
         case "startGithubAuth":
           return sendResponse({ ok: true, ...(await startAuth()) });
+        case "pollAuth":
+          return sendResponse(await pollAuth());
+        case "cancelAuth":
+          await clearAuth();
+          return sendResponse({ ok: true });
         case "setToken": {
           const user = await GH.getUser(msg.token); // validates the token
           await store({ githubToken: msg.token, githubUser: user.login });
@@ -173,6 +220,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(async () => {
   const cur = await read("enabled");
   if (cur.enabled === undefined) await store({ enabled: true });
-  // Open onboarding on first install.
-  chrome.action.openPopup && chrome.action.openPopup().catch(() => {});
+});
+
+// Alarm backstop: completes sign-in even if the popup is closed and the worker
+// was recycled while the user authorized on github.com.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "leetgit-auth") pollAuth();
 });
