@@ -35,11 +35,14 @@
     );
   }
 
+  const PROBE_RE = /submi|check|interpret/i;
+
   // Wrap fetch.
   const origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function (...args) {
       const url = typeof args[0] === "string" ? args[0] : args[0] && args[0].url;
+      if (url && PROBE_RE.test(url)) console.log("[LeetGit] net fetch:", url);
       const p = origFetch.apply(this, args);
       if (url && CHECK_RE.test(url)) {
         p.then((resp) => {
@@ -59,6 +62,7 @@
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (...args) {
     const url = this.__leetgitUrl;
+    if (url && PROBE_RE.test(url)) console.log("[LeetGit] net xhr:", url);
     if (url && CHECK_RE.test(url)) {
       this.addEventListener("load", function () {
         try {
