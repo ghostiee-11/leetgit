@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetGit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Auto-sync your accepted LeetCode solutions to GitHub, with streaks, charts and a solve dashboard.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
