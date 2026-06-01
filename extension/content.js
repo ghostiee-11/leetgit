@@ -1,21 +1,11 @@
-// Content script on leetcode.com problem pages. Injects the page-context
-// network watcher, and when a submission is accepted it fetches the question +
-// submission (same-origin, with your cookies), formats the files, and hands the
-// result to the background worker to push to GitHub.
+// Content script (isolated world) on leetcode.com. inject.js runs in the MAIN
+// world and posts a window message when a submission is Accepted. Here we fetch
+// the question + submission (same-origin, with your cookies), format the files,
+// and hand the result to the background worker to push to GitHub.
 (function () {
   "use strict";
 
-  // Inject the page-context watcher that detects accepted submissions.
-  try {
-    const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("inject.js");
-    script.onload = function () {
-      this.remove();
-    };
-    (document.head || document.documentElement).appendChild(script);
-  } catch (e) {
-    console.error("[LeetGit] inject failed", e);
-  }
+  console.log("[LeetGit] content script loaded");
 
   let busy = false;
 
@@ -23,12 +13,15 @@
     if (event.source !== window) return;
     const msg = event.data;
     if (!msg || msg.source !== "leetgit" || msg.type !== "accepted") return;
+    console.log("[LeetGit] accepted message received", msg.submissionId);
     if (busy) return;
     busy = true;
+    toast("LeetGit: syncing...", true);
     try {
       await onAccepted(msg.submissionId, msg.slug);
     } catch (e) {
       console.error("[LeetGit] sync error", e);
+      toast("LeetGit: " + (e && e.message ? e.message : "sync failed"), false);
     } finally {
       setTimeout(() => (busy = false), 1500);
     }
@@ -37,17 +30,23 @@
   async function onAccepted(submissionId, slug) {
     const LC = globalThis.LeetGitLC;
     const FMT = globalThis.LeetGitFmt;
+    if (!LC || !FMT) throw new Error("libs not loaded");
     const question = await LC.getQuestion(slug);
     const submission = await LC.getSubmission(submissionId);
     const solution = FMT.buildSolution(question, submission);
+    console.log("[LeetGit] sending solution to background", solution.folder);
     chrome.runtime.sendMessage({ type: "solved", solution, submissionId }, (resp) => {
-      if (chrome.runtime.lastError) return;
+      if (chrome.runtime.lastError) {
+        console.error("[LeetGit] sendMessage error", chrome.runtime.lastError.message);
+        return;
+      }
+      console.log("[LeetGit] background response", resp);
       if (resp && resp.ok && !resp.skipped) toast("Pushed to GitHub ✓", true);
+      else if (resp && resp.skipped) toast("Already synced", true);
       else if (resp && resp.error) toast("LeetGit: " + resp.error, false);
     });
   }
 
-  // Small on-page toast so the user gets feedback without opening the popup.
   function toast(text, ok) {
     const el = document.createElement("div");
     el.textContent = text;
@@ -57,7 +56,7 @@
       "color:#fff", "box-shadow:0 8px 24px rgba(0,0,0,.3)",
       "background:" + (ok ? "linear-gradient(135deg,#7c5cff,#38bdf8)" : "#ef4444"),
     ].join(";");
-    document.body.appendChild(el);
+    document.body && document.body.appendChild(el);
     setTimeout(() => el.remove(), 4000);
   }
 })();

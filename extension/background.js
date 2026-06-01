@@ -68,6 +68,7 @@ async function handleSolved(solution, submissionId) {
   const { enabled, githubToken, repo, branch, manifest, seen } = await read([
     "enabled", "githubToken", "repo", "branch", "manifest", "seen",
   ]);
+  console.log("[LeetGit] solved received", { folder: solution && solution.folder, hasToken: !!githubToken, repo });
   if (enabled === false) return { ok: false, error: "LeetGit is paused" };
   if (!githubToken || !repo) {
     return { ok: false, error: "Connect GitHub and a repo first" };
