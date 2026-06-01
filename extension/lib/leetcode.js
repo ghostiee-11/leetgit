@@ -91,5 +91,80 @@
     };
   }
 
-  globalThis.LeetGitLC = { getQuestion, getSubmission };
+  // ---- Backfill: the user's past accepted submissions ----
+
+  const LANG_DISPLAY = {
+    python: "Python", python3: "Python3", cpp: "C++", c: "C", java: "Java",
+    csharp: "C#", javascript: "JavaScript", typescript: "TypeScript", php: "PHP",
+    swift: "Swift", kotlin: "Kotlin", dart: "Dart", golang: "Go", ruby: "Ruby",
+    scala: "Scala", rust: "Rust", racket: "Racket", erlang: "Erlang",
+    elixir: "Elixir", mysql: "MySQL", mssql: "MS SQL", oraclesql: "Oracle",
+    postgresql: "PostgreSQL", bash: "Bash",
+  };
+
+  function langDisplay(lang) {
+    return LANG_DISPLAY[(lang || "").toLowerCase()] || lang || "text";
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  // Page through the REST submission history and return the latest accepted
+  // submission per (problem, language). onProgress(count) is called as we scan.
+  async function getAcceptedHistory(onProgress) {
+    const seen = new Map(); // slug|lang -> row
+    let offset = 0;
+    const limit = 20;
+    let hasNext = true;
+    let guard = 0;
+    while (hasNext && guard < 1000) {
+      guard++;
+      const resp = await fetch(
+        "https://leetcode.com/api/submissions/?offset=" + offset + "&limit=" + limit,
+        { credentials: "include", headers: { "x-csrftoken": getCookie("csrftoken") } }
+      );
+      if (resp.status === 401 || resp.status === 403) {
+        const e = new Error("LeetCode session invalid or expired");
+        e.auth = true;
+        throw e;
+      }
+      if (!resp.ok) throw new Error("submissions HTTP " + resp.status);
+      const data = await resp.json();
+      const dump = data.submissions_dump || [];
+      for (const row of dump) {
+        if (row.status_display !== "Accepted" && row.status !== 10) continue;
+        const key = row.title_slug + "|" + row.lang;
+        const prev = seen.get(key);
+        if (!prev || Number(row.timestamp) > Number(prev.timestamp)) seen.set(key, row);
+      }
+      if (onProgress) onProgress(seen.size);
+      hasNext = !!data.has_next;
+      offset += limit;
+      await sleep(250); // be gentle on LeetCode
+    }
+    return Array.from(seen.values());
+  }
+
+  // Build a submission object (matching getSubmission's shape) from a history
+  // row. Percentiles are not in the dump, so they are null.
+  function submissionFromDump(row) {
+    return {
+      code: row.code || "",
+      lang: row.lang,
+      langDisplay: langDisplay(row.lang),
+      runtime: row.runtime || "N/A",
+      runtimePercentile: null,
+      memory: row.memory || "N/A",
+      memoryPercentile: null,
+      timestamp: Number(row.timestamp || 0),
+    };
+  }
+
+  globalThis.LeetGitLC = {
+    getQuestion,
+    getSubmission,
+    getAcceptedHistory,
+    submissionFromDump,
+  };
 })();

@@ -101,7 +101,7 @@ async function connectRepo(fullName) {
 }
 
 // ---- Sync ----
-async function handleSolved(payload, submissionId) {
+async function handleSolved(payload, submissionId, backfill) {
   const { enabled, githubToken, repo, branch, manifest, seen } = await read([
     "enabled", "githubToken", "repo", "branch", "manifest", "seen",
   ]);
@@ -111,6 +111,15 @@ async function handleSolved(payload, submissionId) {
   }
   const seenIds = seen || [];
   if (submissionId && seenIds.includes(submissionId)) return { ok: true, skipped: true };
+
+  // During backfill, skip a problem+language already present so we do not
+  // create redundant commits when backfill is re-run.
+  if (backfill && manifest && payload.folder) {
+    const entry = manifest[payload.folder];
+    if (entry && entry.solutions && entry.solutions[payload.solution.ext]) {
+      return { ok: true, skipped: true };
+    }
+  }
 
   try {
     const result = await GH.pushSolution(githubToken, repo, branch || "main", payload, manifest || {});
@@ -203,7 +212,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await store({ enabled: !!msg.enabled });
           return sendResponse({ ok: true });
         case "solved":
-          return sendResponse(await handleSolved(msg.payload, msg.submissionId));
+          return sendResponse(await handleSolved(msg.payload, msg.submissionId, msg.backfill));
         case "getStats":
           return sendResponse({ ok: true, ...(await getStats()) });
         default:

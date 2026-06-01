@@ -117,8 +117,24 @@ chrome.runtime.onMessage.addListener((msg) => {
     else alertBanner(msg.error || "authorization failed");
   } else if (msg.type === "synced") {
     route();
+  } else if (msg.type === "backfillProgress") {
+    renderBackfillProgress(msg);
   }
 });
+
+function renderBackfillProgress(msg) {
+  const el = $("backfill-status");
+  if (!el) return;
+  if (msg.phase === "scanning") {
+    el.textContent = "Scanning your submissions... found " + (msg.done || 0);
+  } else if (msg.phase === "pushing") {
+    el.textContent = "Pushing " + msg.done + " / " + msg.total + " (" + (msg.pushed || 0) + " synced)";
+  } else if (msg.phase === "done") {
+    el.textContent = "Done. " + (msg.pushed || 0) + " synced, " + (msg.failed || 0) + " failed, of " + msg.total + ".";
+    const btn = $("backfill-btn");
+    if (btn) btn.disabled = false;
+  }
+}
 
 // ---- Repo picker ----
 let allRepos = [];
@@ -314,6 +330,25 @@ $("enabled-input").addEventListener("change", (e) => send({ type: "setEnabled", 
 $("change-repo").addEventListener("click", showRepoPicker);
 $("disconnect").addEventListener("click", async () => { await send({ type: "disconnect" }); route(); });
 $("close-settings").addEventListener("click", route);
+
+$("backfill-btn").addEventListener("click", async () => {
+  const tabs = await chrome.tabs.query({ url: "https://leetcode.com/*" });
+  if (!tabs.length) {
+    $("backfill-status").textContent = "Open a leetcode.com tab first, then try again.";
+    return;
+  }
+  $("backfill-btn").disabled = true;
+  $("backfill-status").textContent = "Starting... keep that LeetCode tab open.";
+  chrome.tabs.sendMessage(tabs[0].id, { type: "startBackfill" }, (resp) => {
+    if (chrome.runtime.lastError) {
+      $("backfill-status").textContent = "Reload the LeetCode tab and try again.";
+      $("backfill-btn").disabled = false;
+    } else if (resp && !resp.ok) {
+      $("backfill-status").textContent = "Error: " + (resp.error || "backfill failed");
+      $("backfill-btn").disabled = false;
+    }
+  });
+});
 
 function alertBanner(text) {
   $("banner").textContent = text || "Something went wrong";

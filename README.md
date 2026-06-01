@@ -83,6 +83,14 @@ check appears on the toolbar icon. Open the popup to see:
 - A 30-day **activity** chart
 - Your most **recent solves**, each linking to its folder in the repo
 
+### Import your past solves (backfill)
+
+Already solved a lot before installing? Open a `leetcode.com` tab, then in the
+extension settings click **Import past solves (backfill)**. LeetGit scans your
+accepted submission history and pushes each problem to your repo (latest
+submission per language), skipping anything already there. It runs in that tab,
+so keep it open while it works.
+
 ## Alternative: Python service (advanced)
 
 A FastAPI service + CLI version lives in `src/leetgit/` for people who prefer to
