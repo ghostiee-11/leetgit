@@ -1,76 +1,89 @@
 """Generate LeetGit PNG icons (16/48/128) with no third-party deps.
 
-A rounded square with a purple->cyan diagonal gradient and a white code slash.
-Run: python generate_icons.py
+Design: a git branch-merge graphic (two purple nodes joined by a branch to a
+cyan node) on a dark navy rounded square. Run: python generate_icons.py
 """
 
 from __future__ import annotations
 
+import math
 import struct
 import zlib
 from pathlib import Path
 
-ACCENT = (124, 92, 255)   # purple
-ACCENT_2 = (56, 189, 248)  # cyan
-WHITE = (245, 245, 250)
+PURPLE = (124, 92, 255)
+CYAN = (56, 189, 248)
+NAVY_A = (40, 38, 70)
+NAVY_B = (22, 21, 40)
 
 
-def _lerp(a: int, b: int, t: float) -> int:
-    return round(a + (b - a) * t)
+def _lerp(a, b, t):
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def _png_chunk(tag: bytes, data: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(data))
-        + tag
-        + data
-        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    )
+def _seg_dist(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
-def _write_png(path: Path, pixels: list[list[tuple[int, int, int, int]]]) -> None:
-    height = len(pixels)
-    width = len(pixels[0])
+def _corner_alpha(x, y, size, radius):
+    cx = min(max(x + 0.5, radius), size - radius)
+    cy = min(max(y + 0.5, radius), size - radius)
+    d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+    if d > radius:
+        return max(0, int(255 * (1 - (d - radius))))
+    return 255
+
+
+def _png_chunk(tag, data):
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+
+def _write_png(path: Path, px) -> None:
+    h, w = len(px), len(px[0])
     raw = bytearray()
-    for row in pixels:
-        raw.append(0)  # filter type 0
+    for row in px:
+        raw.append(0)
         for r, g, b, a in row:
             raw.extend((r, g, b, a))
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     png = b"\x89PNG\r\n\x1a\n"
-    png += _png_chunk(b"IHDR", ihdr)
+    png += _png_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
     png += _png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
     png += _png_chunk(b"IEND", b"")
     path.write_bytes(png)
 
 
-def _make(size: int) -> list[list[tuple[int, int, int, int]]]:
-    radius = size * 0.24
-    stroke = max(1.4, size * 0.085)
+def _make(size: int):
+    s = size
+    radius = s * 0.24
+    stroke = max(1.0, s * 0.055)
+    node_r = max(1.6, s * 0.095)
+    top = (0.32 * s, 0.30 * s)
+    bottom = (0.32 * s, 0.70 * s)
+    right = (0.68 * s, 0.50 * s)
+    nodes = [(top, PURPLE), (bottom, PURPLE), (right, CYAN)]
+
     rows = []
-    for y in range(size):
+    for y in range(s):
         row = []
-        for x in range(size):
-            # Diagonal gradient factor.
-            t = (x + y) / (2 * (size - 1))
-            r = _lerp(ACCENT[0], ACCENT_2[0], t)
-            g = _lerp(ACCENT[1], ACCENT_2[1], t)
-            b = _lerp(ACCENT[2], ACCENT_2[2], t)
-            alpha = 255
+        for x in range(s):
+            t = (x + y) / (2 * (s - 1))
+            col = list(_lerp(NAVY_A, NAVY_B, t))
+            alpha = _corner_alpha(x, y, s, radius)
 
-            # Rounded corners.
-            cx = min(max(x + 0.5, radius), size - radius)
-            cy = min(max(y + 0.5, radius), size - radius)
-            dist = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) ** 0.5
-            if dist > radius:
-                alpha = max(0, int(255 * (1 - (dist - radius))))
+            px, py = x + 0.5, y + 0.5
+            d_line = _seg_dist(px, py, *top, *bottom)
+            d_branch = _seg_dist(px, py, *bottom, *right)
+            if min(d_line, d_branch) < stroke:
+                col = list(CYAN)
+            for (nx, ny), ncol in nodes:
+                if math.hypot(px - nx, py - ny) < node_r:
+                    col = list(ncol)
 
-            # White code slash (anti-diagonal) through the middle.
-            band = abs((x + 0.5) + (y + 0.5) - size)
-            if band < stroke and size * 0.2 < x < size * 0.8:
-                r, g, b = WHITE
-
-            row.append((r, g, b, alpha))
+            row.append((col[0], col[1], col[2], alpha))
         rows.append(row)
     return rows
 
