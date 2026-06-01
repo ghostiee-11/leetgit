@@ -94,14 +94,17 @@ class LeetCodeClient:
             "referer": f"{self.base_url}/",
             "origin": self.base_url,
         }
-        if cookies and cookies.get("csrftoken"):
-            headers["x-csrftoken"] = cookies["csrftoken"]
+        if cookies:
+            if cookies.get("csrftoken"):
+                headers["x-csrftoken"] = cookies["csrftoken"]
+            cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items() if v)
+            if cookie_header:
+                headers["cookie"] = cookie_header
         try:
             resp = await self._client.post(
                 f"{self.base_url}/graphql",
                 json={"query": query, "variables": variables},
                 headers=headers,
-                cookies=cookies or {},
             )
         except httpx.HTTPError as exc:  # network-level
             raise LeetCodeError(f"network error talking to LeetCode: {exc}") from exc
