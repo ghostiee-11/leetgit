@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>LeetGit</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">&lt;/&gt;</span>
+        <span class="brand-name">Leet<span class="brand-accent">Git</span></span>
+      </div>
+      <div class="topbar-right">
+        <span id="status-dot" class="status-dot" title="Service status"></span>
+        <span id="status-text" class="status-text">connecting</span>
+        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+      </div>
+    </header>
+
+    <!-- Reauth / error banner -->
+    <div id="banner" class="banner hidden"></div>
+
+    <!-- Loading -->
+    <section id="view-loading" class="view">
+      <div class="spinner"></div>
+      <p class="muted">Loading your stats...</p>
+    </section>
+
+    <!-- Disconnected -->
+    <section id="view-disconnected" class="view hidden">
+      <div class="empty-icon">&#128268;</div>
+      <h2>Service not running</h2>
+      <p class="muted">
+        Start the local sync service so LeetGit can push your solutions:
+      </p>
+      <pre class="code">leetgit serve</pre>
+      <button id="retry-btn" class="btn-primary">Retry connection</button>
+    </section>
+
+    <!-- Empty (connected, no solves yet) -->
+    <section id="view-empty" class="view hidden">
+      <div class="empty-icon">&#127881;</div>
+      <h2>You're all set!</h2>
+      <p class="muted">Solve a problem on LeetCode and it will appear here, pushed to your repo automatically.</p>
+    </section>
+
+    <!-- Dashboard -->
+    <main id="view-dashboard" class="view hidden">
+      <div class="streak-card">
+        <div class="flame">&#128293;</div>
+        <div class="streak-body">
+          <div class="streak-number"><span id="current-streak">0</span><span class="streak-unit">day streak</span></div>
+          <div class="streak-sub">Best: <strong id="longest-streak">0</strong> &middot; Active <strong id="active-days">0</strong> days</div>
+        </div>
+      </div>
+
+      <div class="donut-card">
+        <div class="donut-wrap">
+          <svg viewBox="0 0 120 120" class="donut" aria-hidden="true">
+            <circle class="donut-track" cx="60" cy="60" r="48" />
+            <circle id="arc-easy" class="donut-arc" cx="60" cy="60" r="48" />
+            <circle id="arc-medium" class="donut-arc" cx="60" cy="60" r="48" />
+            <circle id="arc-hard" class="donut-arc" cx="60" cy="60" r="48" />
+          </svg>
+          <div class="donut-center">
+            <div id="total-solved" class="donut-total">0</div>
+            <div class="donut-label">solved</div>
+          </div>
+        </div>
+        <ul class="legend">
+          <li><span class="dot dot-easy"></span>Easy<span id="count-easy" class="legend-count">0</span></li>
+          <li><span class="dot dot-medium"></span>Medium<span id="count-medium" class="legend-count">0</span></li>
+          <li><span class="dot dot-hard"></span>Hard<span id="count-hard" class="legend-count">0</span></li>
+        </ul>
+      </div>
+
+      <div class="bars">
+        <div class="bar-row">
+          <span class="bar-label easy">Easy</span>
+          <div class="bar-track"><div id="bar-easy" class="bar-fill easy"></div></div>
+          <span id="bar-easy-count" class="bar-count">0</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label medium">Medium</span>
+          <div class="bar-track"><div id="bar-medium" class="bar-fill medium"></div></div>
+          <span id="bar-medium-count" class="bar-count">0</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label hard">Hard</span>
+          <div class="bar-track"><div id="bar-hard" class="bar-fill hard"></div></div>
+          <span id="bar-hard-count" class="bar-count">0</span>
+        </div>
+      </div>
+
+      <div class="activity">
+        <div class="section-title">Last 30 days</div>
+        <div id="activity-chart" class="activity-chart"></div>
+      </div>
+
+      <div class="recent">
+        <div class="section-title">Recent solves</div>
+        <ul id="recent-list" class="recent-list"></ul>
+      </div>
+    </main>
+
+    <!-- Settings panel -->
+    <section id="view-settings" class="view hidden">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Local service port</span>
+        <input id="port-input" type="number" min="1" max="65535" />
+      </label>
+      <label class="toggle-field">
+        <span>Auto-sync enabled</span>
+        <input id="enabled-input" type="checkbox" />
+      </label>
+      <div class="settings-actions">
+        <button id="save-settings" class="btn-primary">Save</button>
+        <button id="close-settings" class="btn-ghost">Cancel</button>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <a id="repo-link" href="#" target="_blank" rel="noopener">View repo &#8599;</a>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
