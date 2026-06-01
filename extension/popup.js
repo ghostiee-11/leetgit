@@ -196,27 +196,76 @@ async function showDashboard() {
   $("bar-medium-count").textContent = d.Medium;
   $("bar-hard-count").textContent = d.Hard;
 
-  renderActivity(stats.activity || []);
+  renderHeatmap(stats.heatmap || []);
+  renderTopics(stats.topics || []);
   renderRecent(stats.recent || []);
 }
 
-function renderActivity(activity) {
-  const chart = $("activity-chart");
-  chart.innerHTML = "";
-  const max = Math.max(1, ...activity.map((a) => a.count));
-  for (const day of activity) {
-    const bar = document.createElement("div");
-    bar.className = "activity-bar";
-    if (day.count > 0) {
-      const ratio = day.count / max;
-      const level = ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
-      bar.classList.add("l" + level);
-      bar.style.height = 20 + ratio * 80 + "%";
-    } else {
-      bar.style.height = "12%";
+function level(count, max) {
+  if (count <= 0) return 0;
+  const ratio = count / max;
+  return ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+}
+
+// GitHub-style calendar: columns are weeks (Sun..Sat), colored by solve count.
+function renderHeatmap(days) {
+  const wrap = $("heatmap");
+  wrap.innerHTML = "";
+  if (!days.length) return;
+  const max = Math.max(1, ...days.map((d) => d.count));
+
+  // Pad the front so the first column starts on Sunday.
+  const cells = [];
+  const firstDow = new Date(days[0].date + "T00:00:00").getDay();
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (const d of days) cells.push(d);
+
+  for (let i = 0; i < cells.length; i += 7) {
+    const col = document.createElement("div");
+    col.className = "heat-col";
+    for (const d of cells.slice(i, i + 7)) {
+      const cell = document.createElement("div");
+      cell.className = "heat-cell";
+      if (d) {
+        cell.classList.add("h" + level(d.count, max));
+        cell.title = d.date + ": " + d.count + " solved";
+      } else {
+        cell.classList.add("h-empty");
+      }
+      col.appendChild(cell);
     }
-    bar.title = day.date + ": " + day.count + " solved";
-    chart.appendChild(bar);
+    wrap.appendChild(col);
+  }
+}
+
+function renderTopics(topics) {
+  const list = $("topics-list");
+  list.innerHTML = "";
+  if (!topics.length) {
+    list.innerHTML = '<div class="muted tiny">No topics yet.</div>';
+    return;
+  }
+  const top = topics.slice(0, 6);
+  const max = Math.max(1, ...top.map((t) => t.count));
+  for (const t of top) {
+    const row = document.createElement("div");
+    row.className = "topic-row";
+    const name = document.createElement("span");
+    name.className = "topic-name";
+    name.textContent = t.tag;
+    const track = document.createElement("div");
+    track.className = "topic-track";
+    const fill = document.createElement("div");
+    fill.className = "topic-fill";
+    const count = document.createElement("span");
+    count.className = "topic-count";
+    count.textContent = String(t.count);
+    track.appendChild(fill);
+    row.append(name, track, count);
+    list.appendChild(row);
+    requestAnimationFrame(() => {
+      fill.style.width = Math.round((t.count / max) * 100) + "%";
+    });
   }
 }
 

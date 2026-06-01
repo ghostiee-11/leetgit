@@ -50,13 +50,31 @@
     return longest;
   }
 
+  function tagsOf(p) {
+    if (p.meta && Array.isArray(p.meta.tags)) return p.meta.tags;
+    if (Array.isArray(p.tags)) return p.tags;
+    return [];
+  }
+
+  function series(dayCounts, todayKey, days) {
+    const out = [];
+    const todayMs = new Date(todayKey + "T00:00:00Z").getTime();
+    for (let offset = days - 1; offset >= 0; offset--) {
+      const key = dayKey(new Date(todayMs - offset * DAY_MS));
+      out.push({ date: key, count: dayCounts[key] || 0 });
+    }
+    return out;
+  }
+
   // problems: array of meta objects; today: a Date.
-  function compute(problems, today, activityDays) {
+  function compute(problems, today, activityDays, heatmapDays) {
     activityDays = activityDays || 30;
+    heatmapDays = heatmapDays || 182; // ~26 weeks
     const todayKey = dayKey(today);
     const byDifficulty = { Easy: 0, Medium: 0, Hard: 0 };
     const dayCounts = {};
     const daySet = new Set();
+    const tagCounts = {};
 
     for (const p of problems) {
       if (DIFFICULTIES.includes(p.difficulty)) byDifficulty[p.difficulty] += 1;
@@ -65,14 +83,14 @@
         dayCounts[day] = (dayCounts[day] || 0) + 1;
         daySet.add(day);
       }
+      for (const tag of tagsOf(p)) {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      }
     }
 
-    const activity = [];
-    const todayMs = new Date(todayKey + "T00:00:00Z").getTime();
-    for (let offset = activityDays - 1; offset >= 0; offset--) {
-      const key = dayKey(new Date(todayMs - offset * DAY_MS));
-      activity.push({ date: key, count: dayCounts[key] || 0 });
-    }
+    const topics = Object.keys(tagCounts)
+      .map((tag) => ({ tag: tag, count: tagCounts[tag] }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 
     const recent = problems
       .filter((p) => p.solved_at)
@@ -85,7 +103,9 @@
       currentStreak: currentStreak(daySet, todayKey),
       longestStreak: longestStreak(daySet),
       activeDays: daySet.size,
-      activity: activity,
+      activity: series(dayCounts, todayKey, activityDays),
+      heatmap: series(dayCounts, todayKey, heatmapDays),
+      topics: topics,
       recent: recent,
     };
   }

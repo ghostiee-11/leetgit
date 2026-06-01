@@ -428,6 +428,87 @@ h2 {
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
 }
 
+/* ---- Heatmap ---- */
+.heatmap {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.heat-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--track);
+}
+.heat-cell.h-empty {
+  background: transparent;
+}
+.heat-cell.h0 {
+  background: #23233a;
+}
+.heat-cell.h1 {
+  background: rgba(124, 92, 255, 0.4);
+}
+.heat-cell.h2 {
+  background: rgba(124, 92, 255, 0.65);
+}
+.heat-cell.h3 {
+  background: var(--accent);
+}
+.heat-cell.h4 {
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+}
+
+/* ---- Topics ---- */
+.topics {
+  margin-bottom: 14px;
+}
+.topics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topic-name {
+  width: 96px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topic-track {
+  flex: 1;
+  height: 8px;
+  background: var(--track);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.topic-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.topic-count {
+  width: 26px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
 /* ---- Recent ---- */
 .recent-list {
   list-style: none;
