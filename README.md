@@ -10,22 +10,25 @@ copy-paste.
 
 ## How it works
 
-LeetCode has no official public API, and a browser extension can only run
-JavaScript, so LeetGit is split into two pieces:
+The extension is **self-contained**: it runs entirely in your browser, no server
+to install. On `leetcode.com` it has your login, so when a submission is
+Accepted it fetches the problem and your code directly, then commits them to your
+GitHub repo using the GitHub API.
 
 ```
-Chrome/Edge extension (JS)            Local Python service (FastAPI)         GitHub
-  detects "Accepted"      POST /sync     fetches question + your code      one commit
-  reads LeetCode cookies  ----------->   formats README + solution file   ----------->
-  shows the dashboard     <-----------   commits + pushes via the API
+Chrome/Edge extension (JS), runs in your browser
+  detects "Accepted" on leetcode.com
+  fetches the question + your code + stats   (LeetCode GraphQL, your session)
+  formats a README + solution file
+  commits to your repo                        (GitHub API, your account)
+  shows the dashboard (streak, charts)
 ```
 
-- The **extension** detects an accepted submission, reads your LeetCode session
-  cookies, and forwards the event to the local service. It also renders the
-  dashboard (streak, charts, recent solves).
-- The **Python service** does all the real work: fetch the problem and your
-  submission from LeetCode's GraphQL API, format the files, and push them to
-  your repo. Secrets stay on your machine.
+There is no LeetGit server. Your code goes only to the GitHub repo you pick.
+
+> A separate **Python/CLI** path also exists for power users who prefer a local
+> service. See "Alternative: Python service" near the end. The published Chrome
+> Web Store build uses the self-contained extension above.
 
 ## What lands in your repo
 
@@ -44,59 +47,53 @@ your-repo/
 Your `## Notes` section in each problem README is preserved across re-syncs, so
 you can write up your approach and it will never be overwritten.
 
-## Setup
+## Install (the extension)
 
-### 1. Install the Python service
+### From source (load unpacked)
 
-Requires Python 3.11+.
-
-```bash
-git clone https://github.com/ghostiee-11/leetgit.git
-cd leetgit
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-### 2. Create a GitHub repo and token
-
-- Create (or pick) a repo to hold your solutions, for example
-  `your-name/leetcode-solutions`.
-- Create a fine-grained Personal Access Token with read/write access to
-  **Contents** on that repo: https://github.com/settings/tokens?type=beta
-
-### 3. Configure and run
-
-```bash
-leetgit init      # paste the token, enter the repo, choose a port
-leetgit serve     # starts the local service on 127.0.0.1:8765
-```
-
-`leetgit init` writes `~/.leetgit/config.yaml` (chmod 600). The token never
-leaves your machine and is not committed anywhere.
-
-### 4. Load the extension
-
-1. Open `chrome://extensions` (or `edge://extensions`).
-2. Turn on **Developer mode**.
+1. Clone this repo.
+2. Open `chrome://extensions` (or `edge://extensions`) and turn on **Developer mode**.
 3. Click **Load unpacked** and select the `extension/` folder.
-4. Make sure you are logged in to LeetCode in the same browser.
+4. Click the LeetGit icon and follow onboarding:
+   - **Connect GitHub** (sign in with GitHub, or paste a personal access token),
+   - **Choose a repo** (pick an existing one or create a new one),
+   - done.
+5. Make sure you are logged in to leetcode.com in the same browser.
 
-Open the extension popup to confirm the status dot is green ("connected"). If
-the port is not the default 8765, set it from the popup settings gear.
+To enable the one-click "Sign in with GitHub" button you need a GitHub OAuth App
+client id; see [extension/PUBLISHING.md](extension/PUBLISHING.md). The
+token path works immediately without it.
+
+### From the Chrome Web Store
+
+Packaging and submission steps are in
+[extension/PUBLISHING.md](extension/PUBLISHING.md). Build a zip with:
+
+```bash
+bash scripts/package-extension.sh   # -> dist/leetgit-extension-vX.Y.Z.zip
+```
 
 ## Usage
 
-Just solve problems. When a submission is accepted, LeetGit pushes it and the
-toolbar badge shows a green check. Open the popup to see:
+Just solve problems. When a submission is accepted, LeetGit pushes it and a green
+check appears on the toolbar icon. Open the popup to see:
 
 - Current and longest **streak**, plus total active days
 - A **donut chart** and bars of Easy / Medium / Hard solved
 - A 30-day **activity** chart
 - Your most **recent solves**, each linking to its folder in the repo
 
-If the local service is not running, accepted submissions are queued in the
-extension and retried automatically once it comes back.
+## Alternative: Python service (advanced)
+
+A FastAPI service + CLI version lives in `src/leetgit/` for people who prefer to
+run sync locally instead of in the extension. It is not required for the
+extension above.
+
+```bash
+pip install -e .
+leetgit init      # paste a PAT, enter the repo
+leetgit serve
+```
 
 ## CLI
 

@@ -14,5 +14,8 @@ venv/
 config.yaml
 *.local.yaml
 
+# Build output
+dist/
+
 # OS
 .DS_Store

@@ -13,40 +13,60 @@
         <span class="brand-name">Leet<span class="brand-accent">Git</span></span>
       </div>
       <div class="topbar-right">
-        <span id="status-dot" class="status-dot" title="Service status"></span>
-        <span id="status-text" class="status-text">connecting</span>
-        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+        <span id="status-dot" class="status-dot" title="GitHub status"></span>
+        <span id="status-text" class="status-text">setup</span>
+        <button id="settings-btn" class="icon-btn hidden" title="Settings" aria-label="Settings">&#9881;</button>
       </div>
     </header>
 
-    <!-- Reauth / error banner -->
     <div id="banner" class="banner hidden"></div>
 
     <!-- Loading -->
-    <section id="view-loading" class="view">
+    <section id="view-loading" class="view center pad">
       <div class="spinner"></div>
-      <p class="muted">Loading your stats...</p>
     </section>
 
-    <!-- Disconnected -->
-    <section id="view-disconnected" class="view hidden">
-      <div class="empty-icon">&#128268;</div>
-      <h2>Service not running</h2>
-      <p class="muted">
-        Start the local sync service so LeetGit can push your solutions:
-      </p>
-      <pre class="code">leetgit serve</pre>
-      <button id="retry-btn" class="btn-primary">Retry connection</button>
+    <!-- Step 1: Connect GitHub -->
+    <section id="view-connect" class="view center pad hidden">
+      <div class="steps"><span class="step active">1</span><span class="step">2</span><span class="step">3</span></div>
+      <div class="hero-mark">&#128279;</div>
+      <h2>Connect GitHub</h2>
+      <p class="muted">Sign in once so LeetGit can push your solved problems to your repo.</p>
+      <button id="connect-btn" class="btn-primary wide">Sign in with GitHub</button>
+      <button id="show-pat" class="linkish">Use a personal access token instead</button>
+      <div id="pat-box" class="pat-box hidden">
+        <input id="pat-input" type="password" placeholder="ghp_... (Contents: read/write)" />
+        <button id="pat-save" class="btn-primary">Save token</button>
+        <p class="tiny muted">Create a fine-grained PAT with Contents read/write at github.com/settings/tokens?type=beta</p>
+      </div>
     </section>
 
-    <!-- Empty (connected, no solves yet) -->
-    <section id="view-empty" class="view hidden">
-      <div class="empty-icon">&#127881;</div>
-      <h2>You're all set!</h2>
-      <p class="muted">Solve a problem on LeetCode and it will appear here, pushed to your repo automatically.</p>
+    <!-- Step 1b: Device-flow waiting -->
+    <section id="view-auth" class="view center pad hidden">
+      <div class="steps"><span class="step active">1</span><span class="step">2</span><span class="step">3</span></div>
+      <h2>Enter this code on GitHub</h2>
+      <div id="user-code" class="user-code">---------</div>
+      <button id="open-github" class="btn-primary wide">Open GitHub &#8599;</button>
+      <div class="auth-waiting"><div class="spinner small"></div><span class="muted">Waiting for authorization...</span></div>
+      <button id="auth-cancel" class="linkish">Cancel</button>
     </section>
 
-    <!-- Dashboard -->
+    <!-- Step 2: Choose repo -->
+    <section id="view-repo" class="view pad hidden">
+      <div class="steps center-steps"><span class="step done">1</span><span class="step active">2</span><span class="step">3</span></div>
+      <h2>Choose a repo</h2>
+      <p class="muted">Where should your solutions be saved?</p>
+      <div class="repo-search"><input id="repo-filter" type="text" placeholder="Filter repos..." /></div>
+      <ul id="repo-list" class="repo-list"><li class="muted">Loading repos...</li></ul>
+      <div class="divider">or</div>
+      <div class="create-repo">
+        <input id="new-repo-name" type="text" placeholder="new-repo-name" />
+        <label class="inline-check"><input id="new-repo-private" type="checkbox" checked /> Private</label>
+        <button id="create-repo-btn" class="btn-primary">Create</button>
+      </div>
+    </section>
+
+    <!-- Step 3: Dashboard -->
     <main id="view-dashboard" class="view hidden">
       <div class="streak-card">
         <div class="flame">&#128293;</div>
@@ -77,21 +97,9 @@
       </div>
 
       <div class="bars">
-        <div class="bar-row">
-          <span class="bar-label easy">Easy</span>
-          <div class="bar-track"><div id="bar-easy" class="bar-fill easy"></div></div>
-          <span id="bar-easy-count" class="bar-count">0</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label medium">Medium</span>
-          <div class="bar-track"><div id="bar-medium" class="bar-fill medium"></div></div>
-          <span id="bar-medium-count" class="bar-count">0</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label hard">Hard</span>
-          <div class="bar-track"><div id="bar-hard" class="bar-fill hard"></div></div>
-          <span id="bar-hard-count" class="bar-count">0</span>
-        </div>
+        <div class="bar-row"><span class="bar-label easy">Easy</span><div class="bar-track"><div id="bar-easy" class="bar-fill easy"></div></div><span id="bar-easy-count" class="bar-count">0</span></div>
+        <div class="bar-row"><span class="bar-label medium">Medium</span><div class="bar-track"><div id="bar-medium" class="bar-fill medium"></div></div><span id="bar-medium-count" class="bar-count">0</span></div>
+        <div class="bar-row"><span class="bar-label hard">Hard</span><div class="bar-track"><div id="bar-hard" class="bar-fill hard"></div></div><span id="bar-hard-count" class="bar-count">0</span></div>
       </div>
 
       <div class="activity">
@@ -103,29 +111,29 @@
         <div class="section-title">Recent solves</div>
         <ul id="recent-list" class="recent-list"></ul>
       </div>
+
+      <div id="empty-dash" class="empty-note hidden">
+        <div class="empty-icon">&#127881;</div>
+        <p class="muted">All set! Solve a problem on LeetCode and it lands here automatically.</p>
+      </div>
     </main>
 
-    <!-- Settings panel -->
-    <section id="view-settings" class="view hidden">
+    <!-- Settings -->
+    <section id="view-settings" class="view pad hidden">
       <h2>Settings</h2>
-      <label class="field">
-        <span>Local service port</span>
-        <input id="port-input" type="number" min="1" max="65535" />
-      </label>
-      <label class="toggle-field">
-        <span>Auto-sync enabled</span>
-        <input id="enabled-input" type="checkbox" />
-      </label>
-      <div class="settings-actions">
-        <button id="save-settings" class="btn-primary">Save</button>
-        <button id="close-settings" class="btn-ghost">Cancel</button>
-      </div>
+      <div class="setting-row"><span class="muted">Account</span><strong id="set-user">-</strong></div>
+      <div class="setting-row"><span class="muted">Repo</span><strong id="set-repo">-</strong></div>
+      <label class="toggle-field"><span>Auto-sync enabled</span><input id="enabled-input" type="checkbox" /></label>
+      <button id="change-repo" class="btn-ghost wide">Change repo</button>
+      <button id="disconnect" class="btn-danger wide">Disconnect GitHub</button>
+      <button id="close-settings" class="linkish">Back</button>
     </section>
 
     <footer class="footer">
       <a id="repo-link" href="#" target="_blank" rel="noopener">View repo &#8599;</a>
     </footer>
 
+    <script src="lib/stats.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

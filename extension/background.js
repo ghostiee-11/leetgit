@@ -1,146 +1,177 @@
-// Service worker: on an Accepted submission it reads the LeetCode session
-// cookies and POSTs the event to the local LeetGit Python service. Handles
-// dedupe, a retry queue when the service is down, and the toolbar badge.
+// Service worker: orchestrates GitHub auth (device flow), repo selection, and
+// pushing solved problems. All logic lives here; no external server.
 "use strict";
 
-const DEFAULTS = { port: 8765, enabled: true };
-const RECENT_MAX = 50;
+importScripts("lib/github.js", "lib/stats.js");
 
-async function getSettings() {
-  const stored = await chrome.storage.local.get(["port", "enabled"]);
-  return { ...DEFAULTS, ...stored };
+const GH = globalThis.LeetGitGH;
+const STATS = globalThis.LeetGitStats;
+
+async function store(obj) {
+  await chrome.storage.local.set(obj);
 }
-
-function serviceUrl(port, path) {
-  return `http://127.0.0.1:${port}${path}`;
-}
-
-async function getLeetCodeCookies() {
-  const names = ["LEETCODE_SESSION", "csrftoken"];
-  const out = {};
-  for (const name of names) {
-    try {
-      const c = await chrome.cookies.get({ url: "https://leetcode.com", name });
-      if (c && c.value) out[name] = c.value;
-    } catch (e) {
-      /* ignore */
-    }
-  }
-  return out;
+async function read(keys) {
+  return chrome.storage.local.get(keys);
 }
 
 function setBadge(text, color) {
   chrome.action.setBadgeText({ text });
   if (color) chrome.action.setBadgeBackgroundColor({ color });
-  if (text) {
-    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 6000);
-  }
+  if (text) setTimeout(() => chrome.action.setBadgeText({ text: "" }), 6000);
 }
 
-async function recordRecent(entry) {
-  const { recent = [] } = await chrome.storage.local.get("recent");
-  const next = [entry, ...recent.filter((r) => r.submissionId !== entry.submissionId)].slice(0, RECENT_MAX);
-  await chrome.storage.local.set({ recent: next, lastSync: entry });
+function broadcast(msg) {
+  chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
-async function enqueue(evt) {
-  const { queue = [] } = await chrome.storage.local.get("queue");
-  if (queue.some((q) => q.submissionId === evt.submissionId)) return;
-  queue.push(evt);
-  await chrome.storage.local.set({ queue });
-}
+// ---- Auth ----
+let authPolling = false;
 
-async function dequeue(submissionId) {
-  const { queue = [] } = await chrome.storage.local.get("queue");
-  await chrome.storage.local.set({ queue: queue.filter((q) => q.submissionId !== submissionId) });
-}
-
-async function alreadySynced(submissionId) {
-  const { recent = [] } = await chrome.storage.local.get("recent");
-  return recent.some((r) => r.submissionId === submissionId && r.ok);
-}
-
-async function syncEvent(evt) {
-  const settings = await getSettings();
-  if (!settings.enabled) return { ok: false, error: "LeetGit is paused" };
-  if (await alreadySynced(evt.submissionId)) return { ok: true, skipped: true };
-
-  const cookies = await getLeetCodeCookies();
-  let resp;
-  try {
-    resp = await fetch(serviceUrl(settings.port, "/sync"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug: evt.slug, submissionId: evt.submissionId, cookies }),
+async function startAuth() {
+  const device = await GH.startDeviceFlow();
+  if (!authPolling) {
+    authPolling = true;
+    pollLoop(device.device_code, device.interval, device.expires_in).finally(() => {
+      authPolling = false;
     });
-  } catch (e) {
-    // Service not running: queue and surface a soft error.
-    await enqueue(evt);
-    setBadge("…", "#f59e0b");
-    return { ok: false, offline: true, error: "Local service unreachable" };
   }
-
-  let body = {};
-  try {
-    body = await resp.json();
-  } catch (e) {
-    /* non-JSON */
-  }
-
-  if (resp.ok && body.ok) {
-    await dequeue(evt.submissionId);
-    await recordRecent({
-      ok: true,
-      submissionId: evt.submissionId,
-      slug: evt.slug,
-      title: body.title || evt.slug,
-      commitUrl: body.commitUrl || null,
-      at: new Date().toISOString(),
-    });
-    setBadge("✓", "#22c55e"); // check mark
-    return body;
-  }
-
-  const errEntry = {
-    ok: false,
-    submissionId: evt.submissionId,
-    slug: evt.slug,
-    title: evt.slug,
-    error: body.error || `HTTP ${resp.status}`,
-    reauth: body.reauth || body.githubAuth || false,
-    at: new Date().toISOString(),
+  return {
+    user_code: device.user_code,
+    verification_uri: device.verification_uri,
+    expires_in: device.expires_in,
   };
-  await recordRecent(errEntry);
-  setBadge("!", "#ef4444");
-  return errEntry;
 }
 
-async function flushQueue() {
-  const settings = await getSettings();
-  if (!settings.enabled) return;
-  const { queue = [] } = await chrome.storage.local.get("queue");
-  for (const evt of queue) {
-    await syncEvent(evt);
+async function pollLoop(deviceCode, interval, expiresIn) {
+  try {
+    const token = await GH.pollAccessToken(deviceCode, interval, expiresIn);
+    const user = await GH.getUser(token);
+    await store({ githubToken: token, githubUser: user.login });
+    broadcast({ type: "authChanged", ok: true, user: user.login });
+  } catch (e) {
+    broadcast({ type: "authChanged", ok: false, error: String(e.message || e) });
   }
 }
 
+// ---- Repo ----
+async function connectRepo(fullName) {
+  const { githubToken } = await read("githubToken");
+  const branch = await GH.getDefaultBranch(githubToken, fullName);
+  const manifest = await GH.readManifest(githubToken, fullName, branch);
+  await store({ repo: fullName, branch, manifest });
+  broadcast({ type: "repoChanged", repo: fullName });
+  return { repo: fullName, branch };
+}
+
+// ---- Sync ----
+async function handleSolved(solution, submissionId) {
+  const { enabled, githubToken, repo, branch, manifest, seen } = await read([
+    "enabled", "githubToken", "repo", "branch", "manifest", "seen",
+  ]);
+  if (enabled === false) return { ok: false, error: "LeetGit is paused" };
+  if (!githubToken || !repo) {
+    return { ok: false, error: "Connect GitHub and a repo first" };
+  }
+  const seenIds = seen || [];
+  if (submissionId && seenIds.includes(submissionId)) return { ok: true, skipped: true };
+
+  try {
+    const result = await GH.pushSolution(githubToken, repo, branch || "main", solution, manifest || {});
+    await store({
+      manifest: result.manifest,
+      seen: [submissionId, ...seenIds].slice(0, 200),
+      lastSync: {
+        ok: true,
+        title: solution.meta.frontend_id + ". " + solution.meta.title,
+        commitUrl: result.commitUrl,
+        at: new Date().toISOString(),
+      },
+    });
+    setBadge("✓", "#22c55e");
+    broadcast({ type: "synced", ok: true });
+    return { ok: true, commitUrl: result.commitUrl };
+  } catch (e) {
+    const entry = {
+      ok: false,
+      title: solution.meta.frontend_id + ". " + solution.meta.title,
+      error: String(e.message || e),
+      auth: !!e.auth,
+      at: new Date().toISOString(),
+    };
+    await store({ lastSync: entry });
+    setBadge("!", "#ef4444");
+    broadcast({ type: "synced", ok: false, error: entry.error });
+    return entry;
+  }
+}
+
+// ---- Stats ----
+async function getStats() {
+  const { manifest } = await read("manifest");
+  const problems = Object.values(manifest || {});
+  return STATS.compute(problems, new Date());
+}
+
+async function getState() {
+  const s = await read(["githubToken", "githubUser", "repo", "branch", "enabled"]);
+  return {
+    connected: !!s.githubToken,
+    user: s.githubUser || null,
+    repo: s.repo || null,
+    branch: s.branch || null,
+    enabled: s.enabled !== false,
+    configured: GH.isConfigured(),
+  };
+}
+
+// ---- Message router ----
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg && msg.type === "accepted") {
-    syncEvent(msg).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
-    return true; // async response
-  }
-  if (msg && msg.type === "retryQueue") {
-    flushQueue().then(() => sendResponse({ ok: true }));
-    return true;
-  }
+  (async () => {
+    try {
+      switch (msg && msg.type) {
+        case "getState":
+          return sendResponse(await getState());
+        case "startGithubAuth":
+          return sendResponse({ ok: true, ...(await startAuth()) });
+        case "setToken": {
+          const user = await GH.getUser(msg.token); // validates the token
+          await store({ githubToken: msg.token, githubUser: user.login });
+          return sendResponse({ ok: true, user: user.login });
+        }
+        case "listRepos": {
+          const { githubToken } = await read("githubToken");
+          return sendResponse({ ok: true, repos: await GH.listRepos(githubToken) });
+        }
+        case "createRepo": {
+          const { githubToken } = await read("githubToken");
+          const created = await GH.createRepo(githubToken, msg.name, msg.private);
+          return sendResponse({ ok: true, ...(await connectRepo(created.full_name)) });
+        }
+        case "setRepo":
+          return sendResponse({ ok: true, ...(await connectRepo(msg.fullName)) });
+        case "disconnect":
+          await chrome.storage.local.remove(["githubToken", "githubUser", "repo", "branch", "manifest", "seen", "lastSync"]);
+          return sendResponse({ ok: true });
+        case "setEnabled":
+          await store({ enabled: !!msg.enabled });
+          return sendResponse({ ok: true });
+        case "solved":
+          return sendResponse(await handleSolved(msg.solution, msg.submissionId));
+        case "getStats":
+          return sendResponse({ ok: true, ...(await getStats()) });
+        default:
+          return sendResponse({ ok: false, error: "unknown message" });
+      }
+    } catch (e) {
+      sendResponse({ ok: false, error: String((e && e.message) || e), auth: !!(e && e.auth), code: e && e.code });
+    }
+  })();
+  return true; // async
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const cur = await chrome.storage.local.get(["port", "enabled"]);
-  await chrome.storage.local.set({ ...DEFAULTS, ...cur });
-  chrome.alarms.create("leetgit-retry", { periodInMinutes: 1 });
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "leetgit-retry") flushQueue();
+  const cur = await read("enabled");
+  if (cur.enabled === undefined) await store({ enabled: true });
+  // Open onboarding on first install.
+  chrome.action.openPopup && chrome.action.openPopup().catch(() => {});
 });

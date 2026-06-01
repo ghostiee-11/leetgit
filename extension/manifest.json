@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
   "name": "LeetGit",
-  "version": "0.1.0",
-  "description": "Auto-sync your accepted LeetCode solutions to GitHub, with stats, streaks and charts.",
-  "permissions": ["cookies", "storage", "alarms"],
+  "version": "0.2.0",
+  "description": "Auto-sync your accepted LeetCode solutions to GitHub, with streaks, charts and a solve dashboard.",
+  "permissions": ["storage"],
   "host_permissions": [
     "https://leetcode.com/*",
-    "http://127.0.0.1/*",
-    "http://localhost/*"
+    "https://api.github.com/*",
+    "https://github.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -29,7 +29,7 @@
   "content_scripts": [
     {
       "matches": ["https://leetcode.com/problems/*"],
-      "js": ["content.js"],
+      "js": ["lib/leetcode.js", "lib/format.js", "content.js"],
       "run_at": "document_start"
     }
   ],
