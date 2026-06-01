@@ -33,9 +33,9 @@
     if (!LC || !FMT) throw new Error("libs not loaded");
     const question = await LC.getQuestion(slug);
     const submission = await LC.getSubmission(submissionId);
-    const solution = FMT.buildSolution(question, submission);
-    console.log("[LeetGit] sending solution to background", solution.folder);
-    chrome.runtime.sendMessage({ type: "solved", solution, submissionId }, (resp) => {
+    const payload = FMT.buildPayload(question, submission);
+    console.log("[LeetGit] sending solution to background", payload.folder);
+    chrome.runtime.sendMessage({ type: "solved", payload, submissionId }, (resp) => {
       if (chrome.runtime.lastError) {
         console.error("[LeetGit] sendMessage error", chrome.runtime.lastError.message);
         return;

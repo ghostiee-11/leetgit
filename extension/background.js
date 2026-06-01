@@ -101,11 +101,11 @@ async function connectRepo(fullName) {
 }
 
 // ---- Sync ----
-async function handleSolved(solution, submissionId) {
+async function handleSolved(payload, submissionId) {
   const { enabled, githubToken, repo, branch, manifest, seen } = await read([
     "enabled", "githubToken", "repo", "branch", "manifest", "seen",
   ]);
-  console.log("[LeetGit] solved received", { folder: solution && solution.folder, hasToken: !!githubToken, repo });
+  console.log("[LeetGit] solved received", { folder: payload && payload.folder, hasToken: !!githubToken, repo });
   if (enabled === false) return { ok: false, error: "LeetGit is paused" };
   if (!githubToken || !repo) {
     return { ok: false, error: "Connect GitHub and a repo first" };
@@ -114,13 +114,13 @@ async function handleSolved(solution, submissionId) {
   if (submissionId && seenIds.includes(submissionId)) return { ok: true, skipped: true };
 
   try {
-    const result = await GH.pushSolution(githubToken, repo, branch || "main", solution, manifest || {});
+    const result = await GH.pushSolution(githubToken, repo, branch || "main", payload, manifest || {});
     await store({
       manifest: result.manifest,
       seen: [submissionId, ...seenIds].slice(0, 200),
       lastSync: {
         ok: true,
-        title: solution.meta.frontend_id + ". " + solution.meta.title,
+        title: payload.problemMeta.frontend_id + ". " + payload.problemMeta.title,
         commitUrl: result.commitUrl,
         at: new Date().toISOString(),
       },
@@ -131,7 +131,7 @@ async function handleSolved(solution, submissionId) {
   } catch (e) {
     const entry = {
       ok: false,
-      title: solution.meta.frontend_id + ". " + solution.meta.title,
+      title: payload.problemMeta.frontend_id + ". " + payload.problemMeta.title,
       error: String(e.message || e),
       auth: !!e.auth,
       at: new Date().toISOString(),
@@ -204,7 +204,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await store({ enabled: !!msg.enabled });
           return sendResponse({ ok: true });
         case "solved":
-          return sendResponse(await handleSolved(msg.solution, msg.submissionId));
+          return sendResponse(await handleSolved(msg.payload, msg.submissionId));
         case "getStats":
           return sendResponse({ ok: true, ...(await getStats()) });
         default:

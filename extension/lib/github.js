@@ -115,6 +115,37 @@
   }
 
   // ---- Pure helpers ----
+  function pct(v) {
+    return v === null || v === undefined ? "N/A" : Number(v).toFixed(2) + "%";
+  }
+
+  // Build the per-problem README from a folder entry that may hold several
+  // language solutions.
+  function buildReadme(entry) {
+    const m = entry.meta;
+    const tags = m.tags && m.tags.length ? m.tags.join(", ") : "None";
+    let s =
+      "# " + m.frontend_id + ". " + m.title + "\n\n" +
+      "- **Difficulty:** " + m.difficulty + "\n" +
+      "- **Tags:** " + tags + "\n" +
+      "- **Link:** " + m.url + "\n\n" +
+      "## Problem\n\n" + (entry.statement_md || "_Problem statement unavailable._") + "\n\n" +
+      "## Solutions\n\n";
+    const sols = Object.values(entry.solutions).sort((a, b) =>
+      String(b.solved_at || "").localeCompare(String(a.solved_at || ""))
+    );
+    for (const sol of sols) {
+      s +=
+        "### " + sol.lang_display + "\n\n" +
+        "- **Runtime:** " + sol.runtime + " (beats " + pct(sol.runtime_pct) + ")\n" +
+        "- **Memory:** " + sol.memory + " (beats " + pct(sol.memory_pct) + ")\n" +
+        "- **Submitted:** " + (sol.submitted || "N/A") + "\n\n" +
+        "See [" + sol.file + "](" + sol.file + ").\n\n";
+    }
+    s += NOTES_HEADING + "\n\n" + DEFAULT_NOTES + "\n";
+    return s;
+  }
+
   function extractNotes(readme) {
     const idx = readme.indexOf(NOTES_HEADING);
     if (idx === -1) return null;
@@ -213,22 +244,58 @@
     return lastUrl;
   }
 
-  async function pushSolution(token, full, branch, sol, manifest) {
-    const existing = await readFileText(token, full, sol.folder + "/README.md", branch);
-    let readme = sol.readme;
-    if (existing) readme = mergeNotes(existing, readme);
+  // Merge one accepted submission into the folder. Same language updates that
+  // language's file in place; a new language adds a file alongside the others.
+  async function pushSolution(token, full, branch, payload, manifest) {
+    const folder = payload.folder;
+    const sol = payload.solution;
 
-    manifest[sol.folder] = sol.meta;
+    let entry = manifest[folder];
+    if (!entry || !entry.solutions) entry = { folder: folder, solutions: {} };
+    entry.meta = payload.problemMeta;
+    entry.statement_md = payload.statementMd;
+
+    const isNewLang = !entry.solutions[sol.ext];
+    entry.solutions[sol.ext] = {
+      lang_display: sol.lang_display,
+      file: sol.file,
+      runtime: sol.runtime,
+      runtime_pct: sol.runtime_pct,
+      memory: sol.memory,
+      memory_pct: sol.memory_pct,
+      solved_at: sol.solved_at,
+      submitted: sol.submitted,
+    };
+
+    // Flat fields for the index and dashboard stats.
+    const sols = Object.values(entry.solutions);
+    entry.frontend_id = entry.meta.frontend_id;
+    entry.title = entry.meta.title;
+    entry.slug = entry.meta.slug;
+    entry.difficulty = entry.meta.difficulty;
+    entry.folder = folder;
+    entry.lang_display = Array.from(new Set(sols.map((x) => x.lang_display))).join(", ");
+    entry.solved_at = sols.map((x) => x.solved_at).filter(Boolean).sort().slice(-1)[0] || sol.solved_at;
+
+    const existingReadme = await readFileText(token, full, folder + "/README.md", branch);
+    let readme = buildReadme(entry);
+    if (existingReadme) readme = mergeNotes(existingReadme, readme);
+
+    manifest[folder] = entry;
     const files = {};
-    files[sol.folder + "/README.md"] = readme;
-    files[sol.folder + "/" + sol.solutionName] = sol.solutionCode;
+    files[folder + "/README.md"] = readme;
+    files[folder + "/" + sol.file] = sol.code; // only this language's file is written
     files["README.md"] = buildIndex(Object.values(manifest));
     files[".leetgit/solved.json"] = JSON.stringify(manifest, null, 2) + "\n";
 
-    const verb = existing ? "Update" : "Add";
-    const message = verb + " solution: " + sol.meta.frontend_id + ". " + sol.meta.title + " (" + sol.meta.lang_display + ")";
+    const id = entry.meta.frontend_id, title = entry.meta.title, lang = sol.lang_display;
+    let message;
+    if (!existingReadme) message = "Add solution: " + id + ". " + title + " (" + lang + ")";
+    else if (isNewLang) message = "Add " + lang + " solution: " + id + ". " + title;
+    else message = "Update " + lang + " solution: " + id + ". " + title;
+
     const commitUrl = await commitFiles(token, full, branch, files, message);
-    return { commitUrl, manifest, created: !existing };
+    return { commitUrl, manifest, created: !existingReadme, isNewLang: isNewLang };
   }
 
   function authError(resp) {
@@ -253,6 +320,7 @@
     readManifest,
     pushSolution,
     buildIndex,
+    buildReadme,
     mergeNotes,
   };
 })();
