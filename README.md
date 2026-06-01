@@ -95,6 +95,13 @@ leetgit init      # paste a PAT, enter the repo
 leetgit serve
 ```
 
+## Contributing
+
+Contributions are welcome through pull requests. The `main` branch is protected:
+no direct pushes or direct merges, every change goes through a PR. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, workflow, and style. Licensed
+under [MIT](LICENSE).
+
 ## CLI
 
 | Command | What it does |
