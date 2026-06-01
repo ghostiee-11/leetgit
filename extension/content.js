@@ -5,15 +5,12 @@
 (function () {
   "use strict";
 
-  console.log("[LeetGit] content script loaded");
-
   let busy = false;
 
   window.addEventListener("message", async (event) => {
     if (event.source !== window) return;
     const msg = event.data;
     if (!msg || msg.source !== "leetgit" || msg.type !== "accepted") return;
-    console.log("[LeetGit] accepted message received", msg.submissionId);
     if (busy) return;
     busy = true;
     toast("LeetGit: syncing...", true);
@@ -34,13 +31,8 @@
     const question = await LC.getQuestion(slug);
     const submission = await LC.getSubmission(submissionId);
     const payload = FMT.buildPayload(question, submission);
-    console.log("[LeetGit] sending solution to background", payload.folder);
     chrome.runtime.sendMessage({ type: "solved", payload, submissionId }, (resp) => {
-      if (chrome.runtime.lastError) {
-        console.error("[LeetGit] sendMessage error", chrome.runtime.lastError.message);
-        return;
-      }
-      console.log("[LeetGit] background response", resp);
+      if (chrome.runtime.lastError) return;
       if (resp && resp.ok && !resp.skipped) toast("Pushed to GitHub ✓", true);
       else if (resp && resp.skipped) toast("Already synced", true);
       else if (resp && resp.error) toast("LeetGit: " + resp.error, false);

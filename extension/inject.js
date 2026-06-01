@@ -21,31 +21,21 @@
   }
 
   function handleCheck(url, data) {
-    try {
-      console.debug("[LeetGit] check seen", { state: data && data.state, status: data && data.status_msg });
-    } catch (e) {}
     if (!isAccepted(data)) return;
     const idMatch = String(url).match(CHECK_RE);
     const slug = slugFromLocation();
-    if (!idMatch || !slug) {
-      console.warn("[LeetGit] accepted but could not read id/slug", { url, slug });
-      return;
-    }
-    console.log("[LeetGit] Accepted detected:", slug, idMatch[1]);
+    if (!idMatch || !slug) return;
     window.postMessage(
       { source: "leetgit", type: "accepted", submissionId: Number(idMatch[1]), slug: slug },
       "*"
     );
   }
 
-  const PROBE_RE = /\/(submit|check|interpret_solution)\//i;
-
   // Wrap fetch.
   const origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function (...args) {
       const url = typeof args[0] === "string" ? args[0] : args[0] && args[0].url;
-      if (url && PROBE_RE.test(url)) console.log("[LeetGit] net fetch:", url);
       const p = origFetch.apply(this, args);
       if (url && CHECK_RE.test(url)) {
         p.then((resp) => {
@@ -65,7 +55,6 @@
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (...args) {
     const url = this.__leetgitUrl;
-    if (url && PROBE_RE.test(url)) console.log("[LeetGit] net xhr:", url);
     if (url && CHECK_RE.test(url)) {
       this.addEventListener("load", function () {
         try {
@@ -75,6 +64,4 @@
     }
     return origSend.apply(this, args);
   };
-
-  console.log("[LeetGit] submission watcher installed (MAIN world)");
 })();
