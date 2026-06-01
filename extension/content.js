@@ -39,6 +39,63 @@
     });
   }
 
+  // ---- Backfill (triggered from the popup) ----
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === "startBackfill") {
+      runBackfill().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+      return true; // async response
+    }
+  });
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function progress(update) {
+    chrome.runtime.sendMessage(Object.assign({ type: "backfillProgress" }, update));
+  }
+
+  async function runBackfill() {
+    const LC = globalThis.LeetGitLC;
+    const FMT = globalThis.LeetGitFmt;
+    if (!LC || !FMT) return { ok: false, error: "libs not loaded" };
+
+    progress({ phase: "scanning", done: 0, total: 0 });
+    const rows = await LC.getAcceptedHistory((n) => progress({ phase: "scanning", done: n, total: 0 }));
+    const total = rows.length;
+    let done = 0, pushed = 0, failed = 0;
+    const qcache = {};
+
+    for (const row of rows) {
+      try {
+        const slug = row.title_slug;
+        const question = qcache[slug] || (qcache[slug] = await LC.getQuestion(slug));
+        const submission = row.code && row.code.length
+          ? LC.submissionFromDump(row)
+          : await LC.getSubmission(row.id);
+        const payload = FMT.buildPayload(question, submission);
+        const resp = await sendSolved(payload, row.id);
+        if (resp && resp.ok && !resp.skipped) pushed++;
+      } catch (e) {
+        failed++;
+      }
+      done++;
+      progress({ phase: "pushing", done: done, total: total, pushed: pushed });
+      await sleep(400); // gentle on GitHub + LeetCode
+    }
+    progress({ phase: "done", done: done, total: total, pushed: pushed, failed: failed });
+    return { ok: true, total: total, pushed: pushed, failed: failed };
+  }
+
+  function sendSolved(payload, submissionId) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "solved", payload, submissionId, backfill: true }, (resp) => {
+        if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
+        resolve(resp);
+      });
+    });
+  }
+
   function toast(text, ok) {
     const el = document.createElement("div");
     el.textContent = text;
